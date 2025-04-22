@@ -19,3 +19,5 @@ typedef struct
     Document documents[MAX_DOCUMENTS];
     int count;
 } DocumentList;
+
+
