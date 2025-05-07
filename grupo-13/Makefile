@@ -4,17 +4,17 @@ LDFLAGS =
 
 all: folders dserver dclient
 
-dserver: bin/dserver
+dserver: dserver
 
-dclient: bin/dclient
+dclient: dclient
 
 folders:
 	@mkdir -p src include obj bin tmp 
 
-bin/dserver: obj/dserver.o 
+dserver: obj/dserver.o 
 	$(CC) $(LDFLAGS) $^ -o $@
 
-bin/dclient: obj/dclient.o 
+dclient: obj/dclient.o 
 	$(CC) $(LDFLAGS) $^ -o $@
 
 obj/%.o: src/%.c
