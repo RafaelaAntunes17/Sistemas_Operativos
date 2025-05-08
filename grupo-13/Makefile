@@ -1,24 +1,26 @@
 CC = gcc
-CFLAGS = -Wall -g -Iinclude -D_GNU_SOURCE
+CFLAGS = -Wall -Wextra -pedantic -g -Iinclude -D_GNU_SOURCE
 LDFLAGS = 
 
-all: folders dserver dclient
+# Alvos principais
+all: folders bin/dserver bin/dclient
 
-dserver: dserver
-
-dclient: dclient
-
+# Garante que os diretórios existam
 folders:
 	@mkdir -p src include obj bin tmp 
 
-dserver: obj/dserver.o 
+# Regra para o servidor (gera em bin/)
+bin/dserver: obj/dserver.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
-dclient: obj/dclient.o 
+# Regra para o cliente (gera em bin/)
+bin/dclient: obj/dclient.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
+# Compila .c -> .o
 obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Limpeza
 clean:
 	rm -f obj/* tmp/* bin/*
