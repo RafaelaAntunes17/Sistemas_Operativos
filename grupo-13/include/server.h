@@ -18,6 +18,10 @@ typedef struct
     char year[MAX_YEAR];
     char path[MAX_PATH];
 
+    int key;
+
+    char *palavra;
+    int nr_procuras;
 } DocumentMetadata;
 
 typedef struct index
@@ -28,6 +32,7 @@ typedef struct index
     char authors[MAX_AUTHORS];
     char year[MAX_YEAR];
     char path[MAX_PATH];
+
 
     struct index *next;
 } Index;

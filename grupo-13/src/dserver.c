@@ -85,6 +85,10 @@ int main(int argc, char **argv)
                 printf("Servidor encerrado.\n");
                 return EXIT_SUCCESS;
             }
+            if(strcmp(doc.flag, "-a") == 0)
+            {
+                
+            }
         }
     }
 

@@ -25,6 +25,61 @@ int main(int argc, char **argv)
         }
         strcpy(doc.flag, "-f");
     }
+    else if (strcmp(argv[1], "-a") == 0)
+    {
+        if (argc != 5)
+        {
+            perror("Error: Invalid number of arguments for -a");
+            return 1;
+        }
+        strcpy(doc.flag, "-a");
+        strcpy(doc.title, argv[2]);
+        strcpy(doc.authors, argv[3]);
+        strcpy(doc.year, argv[4]);
+        strcpy(doc.path, argv[5]);
+    }
+    else if (strcmp(argv[1], "-d") == 0)
+    {
+        if (argc != 3)
+        {
+            perror("Error: Invalid number of arguments for -d");
+            return 1;
+        }
+        strcpy(doc.flag, "-d");
+        doc.key = atoi(argv[2]);
+    }
+    else if (strcmp(argv[1], "-c") == 0)
+    {
+        if (argc != 3)
+        {
+            perror("Error: Invalid number of arguments for -d");
+            return 1;
+        }
+        strcpy(doc.flag, "-c");
+        doc.key = atoi(argv[2]);
+    }
+    else if (strcmp(argv[1], "-l") == 0)
+    {
+        if (argc != 4)
+        {
+            perror("Error: Invalid number of arguments for -l");
+            return 1;
+        }
+        strcpy(doc.flag, "-l");
+        doc.key = atoi(argv[2]);
+        strcpy(doc.palavra, argv[3]);
+    }
+    else if (strcmp(argv[1], "-s") == 0)
+    {
+        if (argc != 3)
+        {
+            perror("Error: Invalid number of arguments for -s");
+            return 1;
+        }
+        strcpy(doc.flag, "-s");
+        strcpy(doc.palavra, argv[2]);
+        doc.nr_procuras = atoi(argv[3]);
+    }
     else
     {
         printf("Comando não reconhecido\n");
