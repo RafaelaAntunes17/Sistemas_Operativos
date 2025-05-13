@@ -10,11 +10,34 @@
 #include "../include/server.h"
 
 void append_to_metadata(const char *title, const char *authors, const char *year, const char *path) {
-    FILE *fp = fopen(METADATA_FILE, "a");
-    if (fp) {
-        fprintf(fp, "%s;%s;%s;%s\n", title, authors, year, path);
-        fclose(fp);
+    int fd = open(METADATA_FILE, O_WRONLY | O_APPEND | O_CREAT, 0666);
+    if (fd == -1) {
+        perror("Erro a abrir o ficheiro");
+        return;
     }
+
+    size_t line_len = strlen(title) + strlen(authors) + strlen(year) + strlen(path) + 4;
+    char *line = malloc(line_len + 1);
+
+    if (!line) {
+        perror("Erro na alocação da memória");
+        close(fd);
+        return;
+    }
+
+    snprintf(line, line_len + 1, "%s;%s;%s;%s\n", title, authors, year, path);
+
+    ssize_t bytes_written = write(fd, line, line_len);
+    
+    if (bytes_written == -1) {
+        perror("Erro na escrita");
+    } 
+    else if ((size_t)bytes_written != line_len) {
+        fprintf(stderr, "Erro no texto escrito\n");
+    }
+
+    free(line);
+    close(fd);
 }
 
 int main(int argc, char **argv)
