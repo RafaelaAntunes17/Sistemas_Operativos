@@ -9,6 +9,14 @@
 #include <errno.h>
 #include "../include/server.h"
 
+void append_to_metadata(const char *title, const char *authors, const char *year, const char *path) {
+    FILE *fp = fopen(METADATA_FILE, "a");
+    if (fp) {
+        fprintf(fp, "%s;%s;%s;%s\n", title, authors, year, path);
+        fclose(fp);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3)
@@ -59,35 +67,24 @@ int main(int argc, char **argv)
     // Loop principal do servidor
     ssize_t bytes_read;
 
-    while (1)
-    {
-        DocumentMetadata doc;
+    while (1) {
+        char cmd_buffer[BUFFER_SIZE];
+        ssize_t bytes_read = read(server_fd, cmd_buffer, BUFFER_SIZE);
 
-        while ((bytes_read = read(server_fd, &doc, sizeof(DocumentMetadata))))
-        {
-            if (bytes_read == -1)
-            {
-                perror("Erro ao ler do pipe do servidor");
-                close(server_fd);
-                close(client_fd);
-                unlink(SERVER_PIPE);
-                unlink(CLIENT_PIPE);
-                return EXIT_FAILURE;
-            }
-            if (strcmp(doc.flag, "-f") == 0)
-            {
-                const char *msg = "Servidor a encerrar...\n";
-                write(server_fd, msg, strlen(msg));
-                close(server_fd);
-                close(client_fd);
-                unlink(SERVER_PIPE);
-                unlink(CLIENT_PIPE);
-                printf("Servidor encerrado.\n");
-                return EXIT_SUCCESS;
-            }
-            if(strcmp(doc.flag, "-a") == 0)
-            {
-                
+        if (bytes_read > 0) {
+            char *flag = strtok(cmd_buffer, "|");
+            if (strcmp(flag, "-f") == 0) {
+                // Handle server shutdown
+                break;
+            } else if (strcmp(flag, "-a") == 0) {
+                char *title = strtok(NULL, "|");
+                char *authors = strtok(NULL, "|");
+                char *year = strtok(NULL, "|");
+                char *path = strtok(NULL, "|");
+                append_to_metadata(title, authors, year, path);
+            } else if (strcmp(flag, "-d") == 0) {
+                int key = atoi(strtok(NULL, "|"));
+                delete_from_metadata(key);
             }
         }
     }

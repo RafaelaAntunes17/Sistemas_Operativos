@@ -7,14 +7,15 @@
 
 int main(int argc, char **argv)
 {
+    char curr_flag;
     if (argc < 2)
     {
         perror("Error: No command provided");
         return 1;
     }
 
-    DocumentMetadata doc;
-    memset(&doc, 0, sizeof(DocumentMetadata));
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
 
     if (strcmp(argv[1], "-f") == 0)
     {
@@ -23,7 +24,8 @@ int main(int argc, char **argv)
             perror("Error: Invalid number of arguments for -f");
             return 1;
         }
-        strcpy(doc.flag, "-f");
+        snprintf(buffer, BUFFER_SIZE, "-f");
+        curr_flag = "f";
     }
     else if (strcmp(argv[1], "-a") == 0)
     {
@@ -32,11 +34,8 @@ int main(int argc, char **argv)
             perror("Error: Invalid number of arguments for -a");
             return 1;
         }
-        strcpy(doc.flag, "-a");
-        strcpy(doc.title, argv[2]);
-        strcpy(doc.authors, argv[3]);
-        strcpy(doc.year, argv[4]);
-        strcpy(doc.path, argv[5]);
+        snprintf(buffer, BUFFER_SIZE, "-a|%s|%s|%s|%s", argv[2], argv[3], argv[4], argv[5]);
+        curr_flag = "a";
     }
     else if (strcmp(argv[1], "-d") == 0)
     {
@@ -45,8 +44,8 @@ int main(int argc, char **argv)
             perror("Error: Invalid number of arguments for -d");
             return 1;
         }
-        strcpy(doc.flag, "-d");
-        doc.key = atoi(argv[2]);
+        snprintf(buffer, BUFFER_SIZE, "-d|%s", argv[2]);
+        curr_flag = "d";
     }
     else if (strcmp(argv[1], "-c") == 0)
     {
@@ -55,8 +54,8 @@ int main(int argc, char **argv)
             perror("Error: Invalid number of arguments for -d");
             return 1;
         }
-        strcpy(doc.flag, "-c");
-        doc.key = atoi(argv[2]);
+        snprintf(buffer, BUFFER_SIZE, "-c|%s", argv[2], argv[3]);
+        curr_flag = "c";
     }
     else if (strcmp(argv[1], "-l") == 0)
     {
@@ -65,9 +64,8 @@ int main(int argc, char **argv)
             perror("Error: Invalid number of arguments for -l");
             return 1;
         }
-        strcpy(doc.flag, "-l");
-        doc.key = atoi(argv[2]);
-        strcpy(doc.palavra, argv[3]);
+        snprintf(buffer, BUFFER_SIZE, "-l|%s|%s", argv[2], argv[3]);
+        curr_flag = "l";
     }
     else if (strcmp(argv[1], "-s") == 0)
     {
@@ -76,9 +74,8 @@ int main(int argc, char **argv)
             perror("Error: Invalid number of arguments for -s");
             return 1;
         }
-        strcpy(doc.flag, "-s");
-        strcpy(doc.palavra, argv[2]);
-        doc.nr_procuras = atoi(argv[3]);
+        snprintf(buffer, BUFFER_SIZE, "-s|%s|%s", argv[2], argv[3]);
+        curr_flag = "s";
     }
     else
     {
@@ -93,14 +90,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    ssize_t bytes_written = write(write_fd, &doc, sizeof(DocumentMetadata));
+    ssize_t bytes_written = write(write_fd, buffer, strlen(buffer) + 1);
     if (bytes_written == -1)
     {
         perror("Error writing to client pipe");
         close(write_fd);
         return 1;
     }
-    printf("Command sent to server: %s\n", doc.flag);
+    printf("Command sent to server: -%s\n", curr_flag);
 
     int read_fd = open(CLIENT_PIPE, O_RDONLY);
     if (read_fd == -1)
