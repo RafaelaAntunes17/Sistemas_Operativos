@@ -8,9 +8,11 @@
 #include <dirent.h>
 #include <errno.h>
 #include "../include/server.h"
+#include "../include/defs.h"
 
 int main(int argc, char **argv)
 {
+
     if (argc != 3)
     {
         fprintf(stderr, "Uso: %s document_folder cache_size\n", argv[0]);
@@ -24,6 +26,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    // Remover os pipes existentes
     unlink(SERVER_PIPE);
     unlink(CLIENT_PIPE);
 
@@ -37,67 +40,140 @@ int main(int argc, char **argv)
     if (mkfifo(CLIENT_PIPE, 0666) == -1)
     {
         perror("Erro ao criar pipe de respostas");
+        unlink(SERVER_PIPE);
         return EXIT_FAILURE;
     }
 
-    printf("Servidor iniciado. Aguardando comandos...\n");
-    // Inicializar o estado do servidor
-    int server_fd = open(SERVER_PIPE, O_RDONLY);
-    if (server_fd == -1)
+    // Ler e inicializar metadados
+    int fd_meta = open(METADATA_FILE, O_RDONLY | O_CREAT, 0644);
+    if (fd_meta == -1)
     {
-        perror("Erro ao abrir pipe do servidor");
+        perror("Erro ao abrir arquivo de metadados");
+        unlink(SERVER_PIPE);
+        unlink(CLIENT_PIPE);
         return EXIT_FAILURE;
     }
 
-    // Abrir pipe do servidor
-    int client_fd = open(CLIENT_PIPE, O_WRONLY);
-    if (client_fd == -1)
-    {
-        perror("Erro ao abrir pipe de respostas");
-        return EXIT_FAILURE;
-    }
-    // Loop principal do servidor
-    ssize_t bytes_read;
+    ArchiveMetadata existing_doc;
+    int max_key = 0;
 
-    while (1)
+    while (read(fd_meta, &existing_doc, sizeof(ArchiveMetadata)) > 0)
     {
-        DocumentMetadata doc;
-
-        while ((bytes_read = read(server_fd, &doc, sizeof(DocumentMetadata))))
+        if (existing_doc.key > max_key)
         {
-            if (bytes_read == -1)
-            {
-                perror("Erro ao ler do pipe do servidor");
-                close(server_fd);
-                close(client_fd);
-                unlink(SERVER_PIPE);
-                unlink(CLIENT_PIPE);
-                return EXIT_FAILURE;
-            }
-            if (strcmp(doc.flag, "-f") == 0)
-            {
-                const char *msg = "Servidor a encerrar...\n";
-                write(server_fd, msg, strlen(msg));
-                close(server_fd);
-                close(client_fd);
-                unlink(SERVER_PIPE);
-                unlink(CLIENT_PIPE);
-                printf("Servidor encerrado.\n");
-                return EXIT_SUCCESS;
-            }
-            if(strcmp(doc.flag, "-a") == 0)
-            {
-                
-            }
+            max_key = existing_doc.key;
         }
     }
 
-    // Limpeza final
-    close(server_fd);
-    close(client_fd);
+    global_key = max_key + 1;
+    close(fd_meta);
+
+    printf("Próxima key disponível: %d\n", global_key);
+    printf("Servidor iniciado. Aguardando comandos...\n");
+
+    while (1)
+    {
+        printf("Aguardando comandos do cliente...\n");
+        // Abrir os pipes com cada iteração para prevenir fechamentos inesperados
+        int client_fd = open(CLIENT_PIPE, O_RDONLY);
+        if (client_fd == -1)
+        {
+            perror("Erro ao abrir pipe do cliente");
+            return EXIT_FAILURE;
+        }
+
+        int server_fd = open(SERVER_PIPE, O_WRONLY);
+        if (server_fd == -1)
+        {
+            perror("Erro ao abrir pipe do servidor");
+            close(client_fd);
+            return EXIT_FAILURE;
+        }
+
+        // Ler comandos do cliente
+        DocumentMetadata doc;
+        ssize_t bytes_read;
+
+        bytes_read = read(client_fd, &doc, sizeof(DocumentMetadata));
+        if (bytes_read <= 0)
+        {
+            if (bytes_read == -1)
+                perror("Erro ao ler do pipe do cliente");
+
+            close(client_fd);
+            close(server_fd);
+            return EXIT_FAILURE;
+        }
+
+        // Processar comandos
+        if (strcmp(doc.flag, "-f") == 0)
+        {
+            const char *msg = "Servidor a encerrar...\n";
+            write(server_fd, msg, strlen(msg));
+            close(client_fd);
+            close(server_fd);
+            unlink(SERVER_PIPE);
+            unlink(CLIENT_PIPE);
+            printf("Servidor encerrado.\n");
+            return 0;
+        }
+        else if (strcmp(doc.flag, "-a") == 0)
+        {
+            int existing_key = check_existing_document(doc.title, doc.authors, doc.year, doc.path);
+            if (existing_key > 0)
+            {
+                char msg[BUFFER_SIZE];
+                snprintf(msg, sizeof(msg), "Documento %d já indexado \n", existing_key);
+                write(server_fd, msg, strlen(msg));
+                printf("Enviado: %s", msg);
+            }
+            else
+            {
+                int new_key = create_key();
+                append_to_metadata(new_key, doc.title, doc.authors, doc.year, doc.path);
+                char msg[BUFFER_SIZE];
+                snprintf(msg, sizeof(msg), "Documento %d indexado\n", new_key);
+                write(server_fd, msg, strlen(msg));
+                printf("Enviado: %s", msg);
+            }
+        }
+        else if (strcmp(doc.flag, "-c") == 0)
+        {
+            pid_t pid = fork();
+            if (pid == 0)
+            {
+                char *result = searchKey(doc.key);
+                if (*result == '\0')
+                {
+                    char msg[BUFFER_SIZE];
+                    snprintf(msg, sizeof(msg), "Documento não encontrado (key=%d)\n", doc.key);
+                    write(server_fd, msg, strlen(msg));
+                }
+                else
+                {
+                    write(server_fd, result, strlen(result));
+                    printf("Enviado: %s", result);
+                }
+                free(result);
+                exit(0);
+            }
+            else
+            {
+                close(client_fd);
+                printf("Procura em PID = %d\n", pid);
+            }
+        }
+        else
+        {
+        }
+
+        // Fechar os file descriptors no final de cada iteração
+        close(client_fd);
+        close(server_fd);
+    }
+
+    // Código nunca deve chegar aqui, mas por precaução
     unlink(SERVER_PIPE);
     unlink(CLIENT_PIPE);
-
-    printf("Servidor encerrado.\n");
     return EXIT_SUCCESS;
 }

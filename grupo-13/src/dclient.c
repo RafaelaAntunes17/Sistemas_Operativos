@@ -9,7 +9,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        perror("Error: No command provided");
+        fprintf(stderr, "Error: No command provided\n");
         return 1;
     }
 
@@ -20,16 +20,16 @@ int main(int argc, char **argv)
     {
         if (argc != 2)
         {
-            perror("Error: Invalid number of arguments for -f");
+            fprintf(stderr, "Error: Invalid number of arguments for -f\n");
             return 1;
         }
         strcpy(doc.flag, "-f");
     }
     else if (strcmp(argv[1], "-a") == 0)
     {
-        if (argc != 5)
+        if (argc != 6)
         {
-            perror("Error: Invalid number of arguments for -a");
+            fprintf(stderr, "Error: Invalid number of arguments for -a\n");
             return 1;
         }
         strcpy(doc.flag, "-a");
@@ -42,7 +42,7 @@ int main(int argc, char **argv)
     {
         if (argc != 3)
         {
-            perror("Error: Invalid number of arguments for -d");
+            fprintf(stderr, "Error: Invalid number of arguments for -d\n");
             return 1;
         }
         strcpy(doc.flag, "-d");
@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     {
         if (argc != 3)
         {
-            perror("Error: Invalid number of arguments for -d");
+            fprintf(stderr, "Error: Invalid number of arguments for -c\n");
             return 1;
         }
         strcpy(doc.flag, "-c");
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
     {
         if (argc != 4)
         {
-            perror("Error: Invalid number of arguments for -l");
+            fprintf(stderr, "Error: Invalid number of arguments for -l\n");
             return 1;
         }
         strcpy(doc.flag, "-l");
@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     {
         if (argc != 3)
         {
-            perror("Error: Invalid number of arguments for -s");
+            fprintf(stderr, "Error: Invalid number of arguments for -s\n");
             return 1;
         }
         strcpy(doc.flag, "-s");
@@ -86,52 +86,43 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    int write_fd = open(SERVER_PIPE, O_WRONLY);
-    if (write_fd == -1)
-    {
-        perror("Error opening client pipe");
+    // Abrir pipe para escrita
+    int write_fd = open(CLIENT_PIPE, O_WRONLY);
+    if (write_fd == -1) {
+        perror("Erro ao abrir pipe do cliente. Servidor está rodando?");
         return 1;
     }
 
+    // Enviar comando
     ssize_t bytes_written = write(write_fd, &doc, sizeof(DocumentMetadata));
     if (bytes_written == -1)
     {
-        perror("Error writing to client pipe");
+        perror("Erro ao escrever no pipe do cliente");
         close(write_fd);
         return 1;
     }
-    printf("Command sent to server: %s\n", doc.flag);
-
-    int read_fd = open(CLIENT_PIPE, O_RDONLY);
-    if (read_fd == -1)
-    {
-        perror("Error opening server pipe");
-        return 1;
-    }
-    int document_count = 0;
-    if (read(read_fd, &document_count, sizeof(int)) == -1)
-    {
-        perror("Error reading document count");
-        close(read_fd);
-        return 1;
-    }
     close(write_fd);
-    char buffer[BUFFER_SIZE];
-    ssize_t total_bytes;
-    while (total_bytes < document_count)
-    {
-        ssize_t bytes_lidos = read(read_fd, buffer, sizeof(buffer));
-        if (bytes_lidos == -1)
-        {
-            perror("Error reading from server pipe");
-            close(read_fd);
-            return 1;
-        }
-        buffer[bytes_lidos] = '\0'; // Null-terminate the string
-        printf("Received from server: %s\n", buffer);
-        total_bytes += bytes_lidos;
+    
+    // Abrir o pipe para leitura
+    int read_fd = open(SERVER_PIPE, O_RDONLY);
+    if (read_fd == -1) {
+        perror("Erro ao abrir pipe do servidor para leitura");
+        return 1;
     }
-    close(read_fd);
 
+    // Ler resposta
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read = read(read_fd, buffer, BUFFER_SIZE - 1);
+    
+    if (bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+        printf("Received from server:\n%s", buffer);
+    } else if (bytes_read == 0) {
+        printf("No response from server\n");
+    } else {
+        perror("Error reading from server pipe");
+    }
+    
+    close(read_fd);
     return 0;
 }
