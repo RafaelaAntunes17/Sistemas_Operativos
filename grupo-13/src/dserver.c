@@ -12,7 +12,6 @@
 
 int main(int argc, char **argv)
 {
-
     if (argc != 3)
     {
         fprintf(stderr, "Uso: %s document_folder cache_size\n", argv[0]);
@@ -25,6 +24,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "Erro: cache_size deve ser positivo\n");
         return EXIT_FAILURE;
     }
+    Meta cache;
+    memset(cache, 0, sizeof(cache));
+    int indexed_files = 0;
+    indexed_files = fileToCache(cache, cache_size);
+    print_ocupados(cache);
 
     // Remover os pipes existentes
     unlink(SERVER_PIPE);
@@ -45,7 +49,7 @@ int main(int argc, char **argv)
     }
 
     // Ler e inicializar metadados
-    int fd_meta = open(METADATA_FILE, O_RDONLY | O_CREAT, 0644);
+    int fd_meta = open(INDEX_FILE, O_RDONLY | O_CREAT, 0644);
     if (fd_meta == -1)
     {
         perror("Erro ao abrir arquivo de metadados");
@@ -65,10 +69,10 @@ int main(int argc, char **argv)
         }
     }
 
-    global_key = max_key + 1;
+    global_key = max_key;
     close(fd_meta);
 
-    printf("Próxima key disponível: %d\n", global_key);
+    printf("Valor máximo de key encontrado: %d\n", max_key);
     printf("Servidor iniciado. Aguardando comandos...\n");
 
     while (1)
@@ -119,22 +123,31 @@ int main(int argc, char **argv)
         }
         else if (strcmp(doc.flag, "-a") == 0)
         {
+
             int existing_key = check_existing_document(doc.title, doc.authors, doc.year, doc.path);
             if (existing_key > 0)
             {
                 char msg[BUFFER_SIZE];
                 snprintf(msg, sizeof(msg), "Documento %d já indexado \n", existing_key);
                 write(server_fd, msg, strlen(msg));
-                printf("Enviado: %s", msg);
             }
             else
             {
                 int new_key = create_key();
-                append_to_metadata(new_key, doc.title, doc.authors, doc.year, doc.path);
+                if (indexed_files < cache_size)
+                {
+                    append_to_file(new_key, doc.title, doc.authors, doc.year, doc.path);
+                    indexMeta(cache, doc.title, doc.authors, doc.year, doc.path, new_key);
+                    indexed_files++;
+                }
+                else
+                {
+                    append_to_file(new_key, doc.title, doc.authors, doc.year, doc.path);
+                    indexed_files++;
+                }
                 char msg[BUFFER_SIZE];
                 snprintf(msg, sizeof(msg), "Documento %d indexado\n", new_key);
                 write(server_fd, msg, strlen(msg));
-                printf("Enviado: %s", msg);
             }
         }
         else if (strcmp(doc.flag, "-c") == 0)
@@ -152,7 +165,6 @@ int main(int argc, char **argv)
                 else
                 {
                     write(server_fd, result, strlen(result));
-                    printf("Enviado: %s", result);
                 }
                 free(result);
                 exit(0);
@@ -163,11 +175,72 @@ int main(int argc, char **argv)
                 printf("Procura em PID = %d\n", pid);
             }
         }
-        else
+        else if (strcmp(doc.flag, "-d") == 0)
         {
-        }
+            int ind;
+            pid_t pid = fork();
+            if (pid == 0)
+            {
+                if((ind = apagaMeta(cache, doc.key)) == -1)
+                {
+                    char msg[BUFFER_SIZE];
+                    snprintf(msg, sizeof(msg), "Documento não encontrado (key=%d)\n", doc.key);
+                    write(server_fd, msg, strlen(msg));
+                }
+                if(removeKey(cache, doc.key, ind, indexed_files) == -1)
+                {
+                    char msg[BUFFER_SIZE];
+                    snprintf(msg, sizeof(msg), "Erro ao remover o documento (key=%d)\n", doc.key);
+                    write(server_fd, msg, strlen(msg));
+                }
+                else
+                {
+                    char msg[BUFFER_SIZE];
+                    snprintf(msg, sizeof(msg), "Documento %d removido\n", doc.key);
+                    write(server_fd, msg, strlen(msg));
+                }
 
-        // Fechar os file descriptors no final de cada iteração
+                exit(0);
+            }
+            else
+            {
+                close(client_fd);
+                printf("Remoção em PID = %d\n", pid);
+            }
+        }
+        // else if (strcmp(doc.flag, "-l") == 0)
+        //{
+        //     pid_t pid = fork();
+        //     if (pid == 0)
+        //     {
+        //         int nr = searchKeyWords();
+        //         if (nr >= 0)
+        //         {
+        //             char msg[BUFFER_SIZE];
+        //             snprintf(msg, sizeof(msg), "A palavra %s está no ficheiro %d vezes\n", doc.palavra, nr);
+        //             ssize_t bytes_written = write(server_fd, msg, strlen(msg));
+        //             if (bytes_written == -1)
+        //             {
+        //                 perror("Erro ao escrever no pipe do servidor");
+        //             }
+        //         }
+        //         else
+        //         {
+        //             const char *msg = "Arquivo não indexado\n";
+        //             ssize_t bytes_written = write(server_fd, msg, strlen(msg));
+        //             if (bytes_written == -1)
+        //             {
+        //                 perror("Erro ao escrever no pipe do servidor");
+        //             }
+        //         }
+        //     }
+        //     else
+        //     {
+        //         close(client_fd);
+        //         printf("Contagem em PID = %d\n", pid);
+        //     }
+        // }
+        //  Fechar os file descriptors no final de cada iteração
         close(client_fd);
         close(server_fd);
     }
