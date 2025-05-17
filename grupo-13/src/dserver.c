@@ -29,7 +29,31 @@ int main(int argc, char **argv)
 
     int indexed_files = 0;
     indexed_files = fileToCache(cache, cache_size);
-    print_ocupados(cache);
+    for (int i = 0; i < cache_size; i++)
+    {
+        if (cache[i].key != 0)
+        {
+            printf("Índice %d:\n", i);
+            printf("  Chave: %d\n", cache[i].key);
+            printf("  Título: %s\n", cache[i].title);
+            printf("  Autores: %s\n", cache[i].authors);
+            printf("  Ano: %s\n", cache[i].year);
+            printf("  Path: %s\n", cache[i].path);
+
+            ArchiveMetadata *atual = cache[i].next;
+            while (atual != NULL)
+            {
+                printf("    → Encadeado:\n");
+                printf("      Chave: %d\n", atual->key);
+                printf("      Título: %s\n", atual->title);
+                printf("      Autores: %s\n", atual->authors);
+                printf("      Ano: %s\n", atual->year);
+                printf("      Path: %s\n", atual->path);
+                atual = atual->next;
+            }
+            printf("\n");
+        }
+    }
 
     // Remover os pipes existentes
     unlink(SERVER_PIPE);
@@ -146,12 +170,43 @@ int main(int argc, char **argv)
                 }
                 else
                 {
-                    // Cache está cheia, usa política LRU
+
                     int lru_index = find_lru_entry(cache, cache_size);
                     if (lru_index != -1)
                     {
-                        printf("LRU: Substituindo entrada no índice %d pelo novo documento %d\n", lru_index, new_key);
-                        apagaMeta(cache, lru_index); // Remove pelo índice da cache
+                        // Aqui devemos remover o documento mais antigo deste índice
+                        if (cache[lru_index].next == NULL)
+                        {
+                            // Se não houver colisão, simplesmente substituímos
+                            apagaMeta(cache, cache[lru_index].key);
+                        }
+                        else
+                        {
+                            // Se houver colisão, precisamos encontrar o nó mais antigo
+                            ArchiveMetadata *oldest = &cache[lru_index];
+                            ArchiveMetadata *prev = NULL;
+                            ArchiveMetadata *current = cache[lru_index].next;
+
+                            time_t oldest_time = oldest->last_access;
+                            int oldest_key = oldest->key;
+
+                            while (current != NULL)
+                            {
+                                if (current->last_access < oldest_time)
+                                {
+                                    oldest_time = current->last_access;
+                                    oldest_key = current->key;
+                                    prev = oldest;
+                                    oldest = current;
+                                }
+                                current = current->next;
+                            }
+
+                            // Remove o mais antigo (que pode ser o nó principal ou um na lista)
+                            apagaMeta(cache, oldest_key);
+                        }
+
+                        // Agora adicionamos o novo documento à cache
                         indexMeta(cache, doc.title, doc.authors, doc.year, doc.path, new_key);
                     }
                 }
@@ -165,6 +220,8 @@ int main(int argc, char **argv)
             pid_t pid = fork();
             if (pid == 0)
             {
+                update_access_time(cache, doc.key);
+
                 char *result = searchKey(doc.key);
                 if (*result == '\0')
                 {
@@ -254,6 +311,7 @@ int main(int argc, char **argv)
         }
         else if (strcmp(doc.flag, "-s") == 0)
         {
+
         }
         else
         {
@@ -263,8 +321,5 @@ int main(int argc, char **argv)
         close(server_fd);
     }
 
-    // Código nunca deve chegar aqui, mas por precaução
-    unlink(SERVER_PIPE);
-    unlink(CLIENT_PIPE);
     return EXIT_SUCCESS;
 }

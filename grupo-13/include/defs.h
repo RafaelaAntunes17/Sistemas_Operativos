@@ -9,7 +9,6 @@ int check_existing_document(const char *title, const char *authors, const char *
 char *searchKey(int key);
 int removeKey(int key);
 int fileToCache(Meta cache, int cache_size);
-void print_ocupados(Meta tabela);
 int indexMeta(Meta cache, char *title, char *authors, char *year, char *path, int key);
 int apagaMeta(Meta cache, int key);
 int findKey(char *path, char *palavra);

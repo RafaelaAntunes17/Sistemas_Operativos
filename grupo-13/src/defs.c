@@ -140,7 +140,6 @@ char *searchKey(int key)
         current_pos = lseek(fd_metadata, 0, SEEK_CUR);
     }
 
-    // If found, read the latest entry
     if (latest_pos >= 0)
     {
         lseek(fd_metadata, latest_pos, SEEK_SET);
@@ -159,9 +158,6 @@ char *searchKey(int key)
         strcat(buffer, authors);
         strcat(buffer, year);
         strcat(buffer, path);
-
-        Meta cache;
-        update_access_time(cache, key);
     }
 
     close(fd_metadata);
@@ -247,113 +243,156 @@ int fileToCache(Meta cache, int cache_size)
         return -1;
     }
 
-    // Lista temporária usando ArchiveMetadata
-    ArchiveMetadata *head = NULL;
-    ArchiveMetadata doc;
-    int entry_count = 0;
-
-    // Ler todas as entradas
-    // Dentro da leitura dos registos:
-    while (read(fd, &doc, sizeof(ArchiveMetadata)) > 0)
+    // Inicializar a cache
+    for (int i = 0; i < cache_size; i++)
     {
-        ArchiveMetadata *new_node = malloc(sizeof(ArchiveMetadata));
-        memcpy(new_node, &doc, sizeof(ArchiveMetadata));
-        new_node->next = NULL;
-
-        // Inserir ordenado por last_access (mais recente primeiro)
-        if (!head || new_node->last_access >= head->last_access)
-        {
-            new_node->next = head;
-            head = new_node;
-        }
-        else
-        {
-            ArchiveMetadata *current = head;
-            while (current->next && current->next->last_access > new_node->last_access)
-            {
-                current = current->next;
-            }
-            new_node->next = current->next;
-            current->next = new_node;
-        }
+        cache[i].key = 0;
+        cache[i].next = NULL;
     }
+
+    // Array para armazenar temporariamente os documentos
+    ArchiveMetadata *temp_docs = NULL;
+    int doc_count = 0;
+
+    ArchiveMetadata temp;
+    doc_count = 0;
+    lseek(fd, 0, SEEK_SET);
+
+    // Conta quantos registros existem lendo um por um
+    while (read(fd, &temp, sizeof(ArchiveMetadata)) == sizeof(ArchiveMetadata))
+    {
+        doc_count++;
+    }
+
+    if (doc_count == 0)
+    {
+        close(fd);
+        return 0;
+    }
+
+    temp_docs = (ArchiveMetadata *)malloc(doc_count * sizeof(ArchiveMetadata));
+    if (!temp_docs)
+    {
+        perror("Erro de alocação de memória");
+        close(fd);
+        return -1;
+    }
+
+    lseek(fd, 0, SEEK_SET);
+    ssize_t bytes_read = read(fd, temp_docs, doc_count * sizeof(ArchiveMetadata));
     close(fd);
 
-    // Preencher cache
-    int count = 0;
-    ArchiveMetadata *current = head;
-    while (current && count < cache_size)
+    if (bytes_read < 0)
     {
-        int index = current->key % cache_size;
-
-        // Tratar colisões
-        if (cache[index].key == 0)
-        {
-            memcpy(&cache[index], current, sizeof(ArchiveMetadata));
-            cache[index].next = NULL;
-        }
-        else
-        {
-            // Inserir no início da lista encadeada (mais recente primeiro)
-            ArchiveMetadata *new_node = malloc(sizeof(ArchiveMetadata));
-            memcpy(new_node, &cache[index], sizeof(ArchiveMetadata)); // Copiar o antigo cabeça
-            memcpy(&cache[index], current, sizeof(ArchiveMetadata));  // Novo cabeça
-            cache[index].next = new_node;                             // Antigo cabeça agora é o segundo
-        }
-        count++;
-        current = current->next;
+        perror("Erro ao ler documentos");
+        free(temp_docs);
+        return -1;
     }
 
-    // Libertar memória da lista temporária
-    while (head)
+    doc_count = bytes_read / sizeof(ArchiveMetadata);
+
+    // Ordenar por timestamp (LRU)
+    for (int i = 0; i < doc_count - 1; i++)
     {
-        ArchiveMetadata *temp = head;
-        head = head->next;
-        free(temp);
+        for (int j = 0; j < doc_count - i - 1; j++)
+        {
+            if (temp_docs[j].last_access < temp_docs[j + 1].last_access)
+            {
+                // Trocar documentos
+                ArchiveMetadata temp = temp_docs[j];
+                temp_docs[j] = temp_docs[j + 1];
+                temp_docs[j + 1] = temp;
+            }
+        }
     }
 
-    return count;
+    int loaded_count = 0;
+
+    // Agora carregamos na cache os mais recentemente acessados (até cache_size)
+    for (int i = 0; i < doc_count && i < cache_size; i++)
+    {
+        cache[i].key = temp_docs[i].key;
+        strcpy(cache[i].title, temp_docs[i].title);
+        strcpy(cache[i].authors, temp_docs[i].authors);
+        strcpy(cache[i].year, temp_docs[i].year);
+        strcpy(cache[i].path, temp_docs[i].path);
+        cache[i].last_access = temp_docs[i].last_access;
+        cache[i].next = NULL;
+        loaded_count++;
+    }
+
+    for (int i = cache_size; i < doc_count; i++)
+    {
+        int index = temp_docs[i].key % cache_size;
+
+        ArchiveMetadata *new_node = (ArchiveMetadata *)malloc(sizeof(ArchiveMetadata));
+        if (!new_node)
+            continue;
+
+        new_node->key = temp_docs[i].key;
+        strcpy(new_node->title, temp_docs[i].title);
+        strcpy(new_node->authors, temp_docs[i].authors);
+        strcpy(new_node->year, temp_docs[i].year);
+        strcpy(new_node->path, temp_docs[i].path);
+        new_node->last_access = temp_docs[i].last_access;
+
+        // Inserir na lista encadeada
+        new_node->next = cache[index].next;
+        cache[index].next = new_node;
+        loaded_count++;
+    }
+    free(temp_docs);
+    return loaded_count;
 }
 
 int indexMeta(Meta cache, char *title, char *authors, char *year, char *path, int key)
 {
-    if (cache[key].key == 0)
+    int index = key % BUFFER_SIZE; 
+
+    // Se o slot estiver vazio, simplesmente adicionamos
+    if (cache[index].key == 0)
     {
-        strcpy(cache[key].title, title);
-        strcpy(cache[key].authors, authors);
-        strcpy(cache[key].year, year);
-        strcpy(cache[key].path, path);
-        cache[key].key = key;
-        cache[key].next = NULL;
-        cache[key].last_access = time(NULL);
+        strcpy(cache[index].title, title);
+        strcpy(cache[index].authors, authors);
+        strcpy(cache[index].year, year);
+        strcpy(cache[index].path, path);
+        cache[index].key = key;
+        cache[index].next = NULL;
+        cache[index].last_access = time(NULL);
         return key;
     }
-    if (cache[key].key == key)
+
+    // Se o documento já existe na posição principal, apenas atualizamos o timestamp
+    if (cache[index].key == key)
     {
-        update_access_time(cache, key);
+        cache[index].last_access = time(NULL);
         return 0;
     }
 
-    ArchiveMetadata *current = &cache[key];
-    while (current != NULL)
+    // Procuramos na lista encadeada
+    ArchiveMetadata *current = &cache[index];
+    while (current->next != NULL)
     {
-        if (current->key == key)
+        if (current->next->key == key)
         {
-            update_access_time(cache, key);
+            current->next->last_access = time(NULL);
             return 0;
         }
         current = current->next;
     }
-    ArchiveMetadata *new = (ArchiveMetadata *)malloc(sizeof(ArchiveMetadata));
-    strcpy(new->title, title);
-    strcpy(new->authors, authors);
-    strcpy(new->year, year);
-    strcpy(new->path, path);
-    new->key = key;
-    new->next = NULL;
-    new->last_access = time(NULL);
-    printf("Adicionando documento à cache: key=%d, title=%s, authors=%s, year=%s, path=%s\n",
-           new->key, new->title, new->authors, new->year, new->path);
+
+    // Não encontramos, então adicionamos no final da lista
+    ArchiveMetadata *new_node = (ArchiveMetadata *)malloc(sizeof(ArchiveMetadata));
+    strcpy(new_node->title, title);
+    strcpy(new_node->authors, authors);
+    strcpy(new_node->year, year);
+    strcpy(new_node->path, path);
+    new_node->key = key;
+    new_node->next = NULL;
+    new_node->last_access = time(NULL);
+
+    current->next = new_node;
+
 
     return key;
 }
@@ -565,34 +604,64 @@ int findKey(char *path, char *palavra)
 // Função para atualizar o timestamp de acesso de um documento
 void update_access_time(Meta cache, int key)
 {
-    // Verifica se o documento está na posição direta da tabela hash
-    if (cache[key].key == key)
-    {
-        cache[key].last_access = time(NULL);
-        return;
-    }
+    // Atualiza na cache
+    int cache_index = key % BUFFER_SIZE;
+    int updated_in_cache = 0;
 
-    // Procura na lista encadeada se existir
-    if (cache[key].key != 0)
+    // Verificar nó principal
+    if (cache[cache_index].key == key)
     {
-        ArchiveMetadata *current = cache[key].next;
+        cache[cache_index].last_access = time(NULL);
+        updated_in_cache = 1;
+    }
+    else if (cache[cache_index].key != 0)
+    {
+        // Verificar nós encadeados
+        ArchiveMetadata *current = cache[cache_index].next;
         while (current != NULL)
         {
             if (current->key == key)
             {
                 current->last_access = time(NULL);
-                return;
+                updated_in_cache = 1;
+                break;
             }
             current = current->next;
         }
     }
+
+    // Atualizar no arquivo de metadados
+    int fd_meta = open(INDEX_FILE, O_RDWR);
+    if (fd_meta == -1)
+        return;
+
+    ArchiveMetadata doc;
+    while (read(fd_meta, &doc, sizeof(ArchiveMetadata)) > 0)
+    {
+        if (doc.key == key)
+        {
+            // Voltar para a posição deste registro
+            lseek(fd_meta, -sizeof(ArchiveMetadata), SEEK_CUR);
+
+            // Atualizar timestamp
+            doc.last_access = time(NULL);
+
+            // Escrever de volta
+            write(fd_meta, &doc, sizeof(ArchiveMetadata));
+            break;
+        }
+    }
+
+    close(fd_meta);
 }
 
 int find_lru_entry(Meta cache, int cache_size)
 {
-    long oldest_time = time(NULL);
+    time_t oldest_time = time(NULL);
     int lru_index = -1;
+    ArchiveMetadata *lru_node = NULL;
 
+    // Primeiro encontramos a entrada LRU em toda a cache
     for (int i = 0; i < cache_size; i++)
     {
         if (cache[i].key != 0)
@@ -602,6 +671,7 @@ int find_lru_entry(Meta cache, int cache_size)
             {
                 oldest_time = cache[i].last_access;
                 lru_index = i;
+                lru_node = &cache[i];
             }
 
             // Verifica entradas encadeadas
@@ -611,41 +681,13 @@ int find_lru_entry(Meta cache, int cache_size)
                 if (current->last_access < oldest_time)
                 {
                     oldest_time = current->last_access;
-                    lru_index = i; // Mantém o índice da cache, não a chave!
+                    lru_index = i;
+                    lru_node = current; 
                 }
                 current = current->next;
             }
         }
     }
 
-    return lru_index; // Retorna o ÍNDICE da cache, não a chave
-}
-
-void print_ocupados(Meta tabela)
-{
-    for (int i = 0; i < BUFFER_SIZE; i++)
-    {
-        if (tabela[i].key != 0)
-        {
-            printf("Índice %d:\n", i);
-            printf("  Chave: %d\n", tabela[i].key);
-            printf("  Título: %s\n", tabela[i].title);
-            printf("  Autores: %s\n", tabela[i].authors);
-            printf("  Ano: %s\n", tabela[i].year);
-            printf("  Path: %s\n", tabela[i].path);
-
-            ArchiveMetadata *atual = tabela[i].next;
-            while (atual != NULL)
-            {
-                printf("    → Encadeado:\n");
-                printf("      Chave: %d\n", atual->key);
-                printf("      Título: %s\n", atual->title);
-                printf("      Autores: %s\n", atual->authors);
-                printf("      Ano: %s\n", atual->year);
-                printf("      Path: %s\n", atual->path);
-                atual = atual->next;
-            }
-            printf("\n");
-        }
-    }
+    return lru_index;
 }

@@ -21,12 +21,12 @@ typedef struct
     char year[MAX_YEAR];
     char path[MAX_PATH];
 
-
     char palavra[BUFFER_SIZE];
     int nr_procuras;
 } DocumentMetadata;
 
-typedef struct archive_metadata {
+typedef struct archive_metadata
+{
     int key;
 
     char title[MAX_TITLE];
