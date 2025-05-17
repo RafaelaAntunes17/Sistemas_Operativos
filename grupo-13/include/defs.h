@@ -17,3 +17,4 @@ int find_lowest_available_key();
 void update_access_time(Meta cache, int key);
 int find_lru_entry(Meta cache, int cache_size);
 int findKey(char *path, char *palavra);
+char *searchAll(char *palavra, char *path, int nr_processos);

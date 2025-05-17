@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <sys/wait.h>
 #include "../include/server.h"
 #include "../include/defs.h"
 
@@ -127,7 +128,6 @@ char *searchKey(int key)
     ArchiveMetadata doc;
     lseek(fd_metadata, 0, SEEK_SET);
 
-    // Track the position of the most recent entry with the key
     off_t latest_pos = -1;
     off_t current_pos = 0;
 
@@ -177,8 +177,6 @@ int check_existing_document(const char *title, const char *authors, const char *
 
     ArchiveMetadata doc;
     lseek(fd_metadata, 0, SEEK_SET);
-    printf("Verificando documento: title=%s, authors=%s, year=%s, path=%s\n",
-           title, authors, year, path);
 
     while (read(fd_metadata, &doc, sizeof(ArchiveMetadata)) > 0)
     {
@@ -214,8 +212,6 @@ void append_to_file(int key, const char *title, const char *authors, const char 
     strcpy(new_doc.path, path);
     new_doc.last_access = time(NULL);
 
-    printf("Adicionando documento: key=%d, title=%s, authors=%s, year=%s, path=%s\n",
-           new_doc.key, new_doc.title, new_doc.authors, new_doc.year, new_doc.path);
 
     if (write(fd_metadata, &new_doc, sizeof(ArchiveMetadata)) == -1)
     {
@@ -347,7 +343,7 @@ int fileToCache(Meta cache, int cache_size)
 
 int indexMeta(Meta cache, char *title, char *authors, char *year, char *path, int key)
 {
-    int index = key % BUFFER_SIZE; 
+    int index = key % BUFFER_SIZE;
 
     // Se o slot estiver vazio, simplesmente adicionamos
     if (cache[index].key == 0)
@@ -392,7 +388,6 @@ int indexMeta(Meta cache, char *title, char *authors, char *year, char *path, in
     new_node->last_access = time(NULL);
 
     current->next = new_node;
-
 
     return key;
 }
@@ -486,7 +481,6 @@ int searchKeyWords(Meta cache, int key, char *palavra, char *palavra2)
         {
             if (doc.key == key)
             {
-                // Fix: Ensure proper size and null-termination
                 size_t size = strlen(palavra2) + strlen(doc.path) + 1;
                 char *path = malloc(size);
                 if (!path)
@@ -496,7 +490,6 @@ int searchKeyWords(Meta cache, int key, char *palavra, char *palavra2)
                     return -1;
                 }
 
-                // Initialize and concatenate safely
                 path[0] = '\0';
                 strcat(path, palavra2);
                 strcat(path, doc.path);
@@ -601,7 +594,145 @@ int findKey(char *path, char *palavra)
     return atoi(buffer);
 }
 
-// Função para atualizar o timestamp de acesso de um documento
+char *searchAll(char *palavra, char *directory_path, int nr_processos)
+{
+    int fd_ind = open(INDEX_FILE, O_RDONLY);
+    if (fd_ind == -1)
+    {
+        perror("Erro ao abrir arquivo de metadados");
+        return NULL;
+    }
+
+    off_t file_size = lseek(fd_ind, 0, SEEK_END);
+    int nr_files = file_size / sizeof(ArchiveMetadata);
+    lseek(fd_ind, 0, SEEK_SET);
+    int max = (nr_files / nr_processos) + 1;
+    close(fd_ind);
+
+    int pipes[nr_processos][2];
+    pid_t pids[nr_processos];
+    char *buffer = malloc(BUFFER_SIZE * nr_processos);
+    buffer[0] = '\0';
+
+    // Criar todos os pipes primeiro
+    for (int i = 0; i < nr_processos; i++)
+    {
+        if (pipe(pipes[i]) == -1)
+        {
+            perror("Erro ao criar pipe");
+            for (int j = 0; j < i; j++)
+            {
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+            }
+            free(buffer);
+            return NULL;
+        }
+    }
+
+    for (int i = 0; i < nr_processos; i++)
+    {
+        pids[i] = fork();
+        if (pids[i] == 0)
+        { // Processo filho
+            // Fechar pipes não utilizados
+            for (int j = 0; j < nr_processos; j++)
+            {
+                if (j != i)
+                {
+                    close(pipes[j][0]);
+                    close(pipes[j][1]);
+                }
+            }
+            close(pipes[i][0]); // Fechar extremidade de leitura
+
+            int fd_meta = open(INDEX_FILE, O_RDONLY);
+            if (fd_meta == -1)
+            {
+                perror("Erro no filho ao abrir metadados");
+                exit(EXIT_FAILURE);
+            }
+
+            ArchiveMetadata doc;
+            off_t offset = i * max * sizeof(ArchiveMetadata);
+            lseek(fd_meta, offset, SEEK_SET);
+
+            char local_buffer[BUFFER_SIZE] = {0};
+
+            for (int j = 0; j < max; j++)
+            {
+                ssize_t bytes_read = read(fd_meta, &doc, sizeof(ArchiveMetadata));
+                if (bytes_read != sizeof(ArchiveMetadata))
+                    break;
+
+                char caminho[BUFFER_SIZE];
+                snprintf(caminho, sizeof(caminho), "%s/%s", directory_path, doc.path);
+
+                if (access(caminho, F_OK) == 0)
+                { 
+                    int ocorrencias = findKey(caminho, palavra);
+                    if (ocorrencias > 0)
+                    {
+                        char entry[32];
+                        snprintf(entry, sizeof(entry), "%d, ", doc.key);
+                        strcat(local_buffer, entry);
+                    }
+                }
+            }
+            close(fd_meta);
+
+            size_t len = strlen(local_buffer);
+            if (len > 0)
+                local_buffer[len - 2] = '\0';
+
+            write(pipes[i][1], local_buffer, strlen(local_buffer));
+            close(pipes[i][1]);
+            exit(EXIT_SUCCESS);
+        }
+        else if (pids[i] > 0)
+        {                       // Processo pai
+            close(pipes[i][1]); // Fechar escrita no pai
+        }
+        else
+        {
+            perror("Fork falhou");
+            free(buffer);
+            return NULL;
+        }
+    }
+
+    // Coletar resultados de todos os filhos
+    for (int i = 0; i < nr_processos; i++)
+    {
+        waitpid(pids[i], NULL, 0); // Esperar filho terminar
+
+        char temp[BUFFER_SIZE];
+        ssize_t bytes_read = read(pipes[i][0], temp, sizeof(temp));
+        if (bytes_read > 0)
+        {
+            temp[bytes_read] = '\0';
+            if (buffer[0] != '\0')
+                strcat(buffer, ", ");
+            strcat(buffer, temp);
+        }
+        close(pipes[i][0]);
+    }
+
+    // Formatar resultado final
+    if (buffer[0] == '\0')
+    {
+        free(buffer);
+        return NULL;
+    }
+    else
+    {
+        char *final_result = malloc(strlen(buffer) + 4);
+        sprintf(final_result, "[%s]\n", buffer);
+        free(buffer);
+        return final_result;
+    }
+}
+
 void update_access_time(Meta cache, int key)
 {
     // Atualiza na cache
@@ -630,7 +761,6 @@ void update_access_time(Meta cache, int key)
         }
     }
 
-    // Atualizar no arquivo de metadados
     int fd_meta = open(INDEX_FILE, O_RDWR);
     if (fd_meta == -1)
         return;
@@ -682,7 +812,7 @@ int find_lru_entry(Meta cache, int cache_size)
                 {
                     oldest_time = current->last_access;
                     lru_index = i;
-                    lru_node = current; 
+                    lru_node = current;
                 }
                 current = current->next;
             }

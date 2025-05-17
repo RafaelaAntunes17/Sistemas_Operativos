@@ -29,29 +29,42 @@ int main(int argc, char **argv)
 
     int indexed_files = 0;
     indexed_files = fileToCache(cache, cache_size);
+    // Primeiro loop: Imprime todos os principais
+    printf("\n=== Registros Principais ===\n");
     for (int i = 0; i < cache_size; i++)
     {
         if (cache[i].key != 0)
         {
             printf("Índice %d:\n", i);
-            printf("  Chave: %d\n", cache[i].key);
-            printf("  Título: %s\n", cache[i].title);
-            printf("  Autores: %s\n", cache[i].authors);
-            printf("  Ano: %s\n", cache[i].year);
-            printf("  Path: %s\n", cache[i].path);
+            printf("  [Principal]\n");
+            printf("    Chave: %d\n", cache[i].key);
+            printf("    Título: %s\n", cache[i].title);
+            printf("    Autores: %s\n", cache[i].authors);
+            printf("    Ano: %s\n", cache[i].year);
+            printf("    Path: %s\n\n", cache[i].path);
+        }
+    }
 
+    printf("\n=== Registros Encadeados ===\n");
+    for (int i = 0; i < cache_size; i++)
+    {
+        if (cache[i].key != 0)
+        {
             ArchiveMetadata *atual = cache[i].next;
-            while (atual != NULL)
+            if (atual != NULL)
             {
-                printf("    → Encadeado:\n");
-                printf("      Chave: %d\n", atual->key);
-                printf("      Título: %s\n", atual->title);
-                printf("      Autores: %s\n", atual->authors);
-                printf("      Ano: %s\n", atual->year);
-                printf("      Path: %s\n", atual->path);
-                atual = atual->next;
+                printf("Índice %d:\n", i);
+                printf("  [Encadeados]\n");
+                while (atual != NULL)
+                {
+                    printf("    → Chave: %d\n", atual->key);
+                    printf("      Título: %s\n", atual->title);
+                    printf("      Autores: %s\n", atual->authors);
+                    printf("      Ano: %s\n", atual->year);
+                    printf("      Path: %s\n\n", atual->path);
+                    atual = atual->next;
+                }
             }
-            printf("\n");
         }
     }
 
@@ -311,7 +324,26 @@ int main(int argc, char **argv)
         }
         else if (strcmp(doc.flag, "-s") == 0)
         {
-
+            pid_t pid = fork();
+            if (pid == 0)
+            {
+                char *resultados = searchAll(doc.palavra, argv[1], doc.nr_procuras);
+                if (resultados != NULL)
+                {
+                    write(server_fd, resultados, strlen(resultados));
+                    free(resultados);
+                }
+                else
+                {
+                    const char *msg = "Nenhum documento encontrado.\n";
+                    write(server_fd, msg, strlen(msg));
+                }
+                exit(0);
+            }
+            else
+            {
+                close(client_fd);
+            }
         }
         else
         {
@@ -319,6 +351,7 @@ int main(int argc, char **argv)
             write(server_fd, msg, strlen(msg));
         }
         close(server_fd);
+        close(client_fd);
     }
 
     return EXIT_SUCCESS;

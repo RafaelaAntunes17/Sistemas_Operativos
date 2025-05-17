@@ -71,7 +71,7 @@ int main(int argc, char **argv)
     }
     else if (strcmp(argv[1], "-s") == 0)
     {
-        if (argc != 3)
+        if (argc != 4)
         {
             fprintf(stderr, "Error: Invalid number of arguments for -s\n");
             return 1;
