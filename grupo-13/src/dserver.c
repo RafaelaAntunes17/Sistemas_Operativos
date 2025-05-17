@@ -26,6 +26,7 @@ int main(int argc, char **argv)
     }
     Meta cache;
     memset(cache, 0, sizeof(cache));
+
     int indexed_files = 0;
     indexed_files = fileToCache(cache, cache_size);
     print_ocupados(cache);
@@ -96,6 +97,7 @@ int main(int argc, char **argv)
 
         // Ler comandos do cliente
         DocumentMetadata doc;
+        memset(&doc, 0, sizeof(DocumentMetadata));
         ssize_t bytes_read;
 
         bytes_read = read(client_fd, &doc, sizeof(DocumentMetadata));
@@ -127,6 +129,8 @@ int main(int argc, char **argv)
             int existing_key = check_existing_document(doc.title, doc.authors, doc.year, doc.path);
             if (existing_key > 0)
             {
+                update_access_time(cache, existing_key);
+
                 char msg[BUFFER_SIZE];
                 snprintf(msg, sizeof(msg), "Documento %d já indexado \n", existing_key);
                 write(server_fd, msg, strlen(msg));
@@ -134,16 +138,22 @@ int main(int argc, char **argv)
             else
             {
                 int new_key = create_key();
+                append_to_file(new_key, doc.title, doc.authors, doc.year, doc.path);
                 if (indexed_files < cache_size)
                 {
-                    append_to_file(new_key, doc.title, doc.authors, doc.year, doc.path);
                     indexMeta(cache, doc.title, doc.authors, doc.year, doc.path, new_key);
                     indexed_files++;
                 }
                 else
                 {
-                    append_to_file(new_key, doc.title, doc.authors, doc.year, doc.path);
-                    indexed_files++;
+                    // Cache está cheia, usa política LRU
+                    int lru_index = find_lru_entry(cache, cache_size);
+                    if (lru_index != -1)
+                    {
+                        printf("LRU: Substituindo entrada no índice %d pelo novo documento %d\n", lru_index, new_key);
+                        apagaMeta(cache, lru_index); // Remove pelo índice da cache
+                        indexMeta(cache, doc.title, doc.authors, doc.year, doc.path, new_key);
+                    }
                 }
                 char msg[BUFFER_SIZE];
                 snprintf(msg, sizeof(msg), "Documento %d indexado\n", new_key);
@@ -181,13 +191,14 @@ int main(int argc, char **argv)
             pid_t pid = fork();
             if (pid == 0)
             {
-                if((ind = apagaMeta(cache, doc.key)) == -1)
+                ind = apagaMeta(cache, doc.key);
+                if (ind == -1)
                 {
                     char msg[BUFFER_SIZE];
-                    snprintf(msg, sizeof(msg), "Documento não encontrado (key=%d)\n", doc.key);
+                    snprintf(msg, sizeof(msg), "Documento %d não encontrado\n", doc.key);
                     write(server_fd, msg, strlen(msg));
                 }
-                if(removeKey(cache, doc.key, ind, indexed_files) == -1)
+                else if (removeKey(doc.key) == -1)
                 {
                     char msg[BUFFER_SIZE];
                     snprintf(msg, sizeof(msg), "Erro ao remover o documento (key=%d)\n", doc.key);
@@ -208,40 +219,47 @@ int main(int argc, char **argv)
                 printf("Remoção em PID = %d\n", pid);
             }
         }
-        // else if (strcmp(doc.flag, "-l") == 0)
-        //{
-        //     pid_t pid = fork();
-        //     if (pid == 0)
-        //     {
-        //         int nr = searchKeyWords();
-        //         if (nr >= 0)
-        //         {
-        //             char msg[BUFFER_SIZE];
-        //             snprintf(msg, sizeof(msg), "A palavra %s está no ficheiro %d vezes\n", doc.palavra, nr);
-        //             ssize_t bytes_written = write(server_fd, msg, strlen(msg));
-        //             if (bytes_written == -1)
-        //             {
-        //                 perror("Erro ao escrever no pipe do servidor");
-        //             }
-        //         }
-        //         else
-        //         {
-        //             const char *msg = "Arquivo não indexado\n";
-        //             ssize_t bytes_written = write(server_fd, msg, strlen(msg));
-        //             if (bytes_written == -1)
-        //             {
-        //                 perror("Erro ao escrever no pipe do servidor");
-        //             }
-        //         }
-        //     }
-        //     else
-        //     {
-        //         close(client_fd);
-        //         printf("Contagem em PID = %d\n", pid);
-        //     }
-        // }
-        //  Fechar os file descriptors no final de cada iteração
-        close(client_fd);
+        else if (strcmp(doc.flag, "-l") == 0)
+        {
+            pid_t pid = fork();
+            if (pid == 0)
+            {
+                int nr = searchKeyWords(cache, doc.key, doc.palavra, argv[1]);
+                if (nr >= 0)
+                {
+                    char msg[BUFFER_SIZE];
+                    snprintf(msg, sizeof(msg), "%d \n", nr);
+                    ssize_t bytes_written = write(server_fd, msg, strlen(msg));
+                    if (bytes_written == -1)
+                    {
+                        perror("Erro ao escrever no pipe do servidor");
+                    }
+                }
+                else
+                {
+                    const char *msg = "Arquivo não indexado ou palavra não encontrada\n";
+                    ssize_t bytes_written = write(server_fd, msg, strlen(msg));
+                    if (bytes_written == -1)
+                    {
+                        perror("Erro ao escrever no pipe do servidor");
+                    }
+                }
+                exit(0);
+            }
+            else
+            {
+                close(client_fd);
+                printf("Contagem em PID = %d\n", pid);
+            }
+        }
+        else if (strcmp(doc.flag, "-s") == 0)
+        {
+        }
+        else
+        {
+            const char *msg = "Comando não reconhecido\n";
+            write(server_fd, msg, strlen(msg));
+        }
         close(server_fd);
     }
 

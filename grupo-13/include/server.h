@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <time.h>
 #define SERVER_PIPE "server_to_client"
 #define CLIENT_PIPE "client_to_server"
 #define INDEX_FILE "docserver_metadata.txt"
@@ -21,19 +22,18 @@ typedef struct
     char path[MAX_PATH];
 
 
-    char *palavra;
+    char palavra[BUFFER_SIZE];
     int nr_procuras;
 } DocumentMetadata;
 
-typedef struct 
-{
-    int contador;
+typedef struct archive_metadata {
     int key;
 
     char title[MAX_TITLE];
     char authors[MAX_AUTHORS];
     char year[MAX_YEAR];
     char path[MAX_PATH];
+    time_t last_access;
 
     struct archive_metadata *next;
 
