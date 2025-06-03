@@ -116,7 +116,7 @@ int main(int argc, char **argv)
     
     if (bytes_read > 0) {
         buffer[bytes_read] = '\0';
-        printf("Recebidopelo servidor:\n%s", buffer);
+        printf("Recebido pelo servidor:\n%s", buffer);
     } else if (bytes_read == 0) {
         printf("Resposta não obtida\n");
     } else {
