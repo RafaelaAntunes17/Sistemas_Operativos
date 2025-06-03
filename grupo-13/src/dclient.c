@@ -9,7 +9,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        fprintf(stderr, "Error: No command provided\n");
+        fprintf(stderr, "Erro: Nenhum comando dado\n");
         return 1;
     }
 
@@ -20,7 +20,7 @@ int main(int argc, char **argv)
     {
         if (argc != 2)
         {
-            fprintf(stderr, "Error: Invalid number of arguments for -f\n");
+            fprintf(stderr, "Erro: Número de argumentos para -f inválido\n");
             return 1;
         }
         strcpy(doc.flag, "-f");
@@ -29,7 +29,7 @@ int main(int argc, char **argv)
     {
         if (argc != 6)
         {
-            fprintf(stderr, "Error: Invalid number of arguments for -a\n");
+            fprintf(stderr, "Erro: Número de argumentos para -a inválido\n");
             return 1;
         }
         strcpy(doc.flag, "-a");
@@ -42,7 +42,7 @@ int main(int argc, char **argv)
     {
         if (argc != 3)
         {
-            fprintf(stderr, "Error: Invalid number of arguments for -d\n");
+            fprintf(stderr, "Erro: Número de argumentos para -d inválido\n");
             return 1;
         }
         strcpy(doc.flag, "-d");
@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     {
         if (argc != 3)
         {
-            fprintf(stderr, "Error: Invalid number of arguments for -c\n");
+            fprintf(stderr, "Erro: Número de argumentos para -c inválido\n");
             return 1;
         }
         strcpy(doc.flag, "-c");
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
     {
         if (argc != 4)
         {
-            fprintf(stderr, "Error: Invalid number of arguments for -l\n");
+            fprintf(stderr, "Erro: Número de argumentos para -l inválido\n");
             return 1;
         }
         strcpy(doc.flag, "-l");
@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     {
         if (argc != 4)
         {
-            fprintf(stderr, "Error: Invalid number of arguments for -s\n");
+            fprintf(stderr, "Erro: Número de argumentos para -s inválido\n");
             return 1;
         }
         strcpy(doc.flag, "-s");
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
     // Abrir pipe para escrita
     int write_fd = open(CLIENT_PIPE, O_WRONLY);
     if (write_fd == -1) {
-        perror("Erro ao abrir pipe do cliente. Servidor está rodando?");
+        perror("Erro ao abrir pipe do cliente. O servidor está a rodar?");
         return 1;
     }
 
@@ -116,11 +116,11 @@ int main(int argc, char **argv)
     
     if (bytes_read > 0) {
         buffer[bytes_read] = '\0';
-        printf("Received from server:\n%s", buffer);
+        printf("Recebidopelo servidor:\n%s", buffer);
     } else if (bytes_read == 0) {
-        printf("No response from server\n");
+        printf("Resposta não obtida\n");
     } else {
-        perror("Error reading from server pipe");
+        perror("Erro a ler do pipe do servidor");
     }
     
     close(read_fd);
